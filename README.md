@@ -18,14 +18,11 @@ web - https://dontpad.com/ptslabhack
 
 Burnercat/pentesting
 
-After the performance refactor, the app runs but shows NOTHING — no hand detection and no object detection, and the debug results bar is empty. Separately, if left idle it closes itself. It worked before the refactor.
+The app closes by itself (especially when idle) but you say the log shows no crash. That means it's likely NOT crashing — it's either being killed or finishing cleanly. Help me find which. 
 
-Both detectors being dead at once means it's not the model — it's frame flow or result wiring. Investigate in this order and tell me the cause before fixing:
+1. Tell me every place in the code that could end the app: any call to finish(), finishAffinity(), System.exit(), activity recreation, or the camera/detection being torn down in onPause/onStop without being restored in onResume. List them.
+2. Add a log line in onPause, onStop, onDestroy, and onResume of the main activity so we can see, in logcat, exactly which lifecycle callback fires right before it closes.
+3. Check whether detection or any blocking/locking call is running on the main thread — an ANR would close the app without a FATAL EXCEPTION. 
+4. Confirm the detection coroutine is properly cancelled in onPause/onStop and the CameraX use cases are unbound and rebound across the lifecycle, so a screen-timeout doesn't kill the app.
 
-1. CameraX: confirm imageProxy.close() (or the equivalent frame release) is still called for EVERY analyzed frame. If frames aren't released, the analyzer stalls after one frame and everything freezes. This is the top suspect.
-2. Confirm the overlay and the debug results bar read the SAME shared cached-boxes object the detection coroutine writes to — not the old source that's no longer populated.
-3. Confirm the hand tracker still receives frames. If frame→tensor conversion was gated to detector-only, the hand pipeline may be starved; make sure hand tracking runs every frame independently.
-4. Add a log where the detection gate decides to fire. If it never fires when the phone is held still, the motion threshold is too high or inverted — lower it and make detection also run at least at a slow baseline, not only on motion.
-5. Idle crash: wrap the background detection/motion coroutines in a SupervisorJob with an exception handler that logs instead of crashing. Here's the crash log: [paste the FATAL EXCEPTION block from adb logcat].
-
-Fix the frame-flow issue first (#1–#3) so detection shows again, then the idle crash. Let me test after each.
+Then reproduce: I'll watch logcat while it closes and tell you which lifecycle log printed last.
