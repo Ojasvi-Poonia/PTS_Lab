@@ -18,15 +18,14 @@ web - https://dontpad.com/ptslabhack
 
 Burnercat/pentesting
 
+After the performance refactor, the app runs but shows NOTHING — no hand detection and no object detection, and the debug results bar is empty. Separately, if left idle it closes itself. It worked before the refactor.
 
+Both detectors being dead at once means it's not the model — it's frame flow or result wiring. Investigate in this order and tell me the cause before fixing:
 
-The app now crashes after the performance changes. Here's the crash log: [paste the FATAL EXCEPTION / backtrace section from `adb logcat`].
+1. CameraX: confirm imageProxy.close() (or the equivalent frame release) is still called for EVERY analyzed frame. If frames aren't released, the analyzer stalls after one frame and everything freezes. This is the top suspect.
+2. Confirm the overlay and the debug results bar read the SAME shared cached-boxes object the detection coroutine writes to — not the old source that's no longer populated.
+3. Confirm the hand tracker still receives frames. If frame→tensor conversion was gated to detector-only, the hand pipeline may be starved; make sure hand tracking runs every frame independently.
+4. Add a log where the detection gate decides to fire. If it never fires when the phone is held still, the motion threshold is too high or inverted — lower it and make detection also run at least at a slow baseline, not only on motion.
+5. Idle crash: wrap the background detection/motion coroutines in a SupervisorJob with an exception handler that logs instead of crashing. Here's the crash log: [paste the FATAL EXCEPTION block from adb logcat].
 
-Before changing anything, tell me which phase's change caused this based on the stack trace. Then:
-
-1. Confirm the shared cached-boxes list is thread-safe — the background detection coroutine writes it while the render thread reads it. Use a concurrent/immutable structure or a lock/synchronized swap so reads and writes can't collide. This is the most likely cause.
-2. Verify the detector input tensor shape matches the re-exported fixed model size (320/416) — check the preprocessing resizes to exactly that, or it's a shape-mismatch crash.
-3. If it's a native crash on model load/inference, temporarily disable INT8 quantization and run the FP32/FP16 model to isolate whether quantization is the problem. Also confirm the XNNPACK EP is actually present in the ORT build and log an error (don't crash) if session creation fails.
-4. Check the reused image buffers aren't shared between the camera-write and detector-read across threads — give the detector its own copy or double-buffer.
-
-Fix only the phase that caused the crash first, then let me test before touching the others.
+Fix the frame-flow issue first (#1–#3) so detection shows again, then the idle crash. Let me test after each.
