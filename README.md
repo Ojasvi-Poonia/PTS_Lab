@@ -18,11 +18,34 @@ web - https://dontpad.com/ptslabhack
 
 Burnercat/pentesting
 
-The app closes by itself (especially when idle) but you say the log shows no crash. That means it's likely NOT crashing — it's either being killed or finishing cleanly. Help me find which. 
-
-1. Tell me every place in the code that could end the app: any call to finish(), finishAffinity(), System.exit(), activity recreation, or the camera/detection being torn down in onPause/onStop without being restored in onResume. List them.
-2. Add a log line in onPause, onStop, onDestroy, and onResume of the main activity so we can see, in logcat, exactly which lifecycle callback fires right before it closes.
-3. Check whether detection or any blocking/locking call is running on the main thread — an ANR would close the app without a FATAL EXCEPTION. 
-4. Confirm the detection coroutine is properly cancelled in onPause/onStop and the CameraX use cases are unbound and rebound across the lifecycle, so a screen-timeout doesn't kill the app.
-
-Then reproduce: I'll watch logcat while it closes and tell you which lifecycle log printed last.
+Context & Objective
+Build a modular Python Proof of Concept (POC) for a training-free open-vocabulary object detection method using Hugging Face's OWLv2. The goal is to implement "Lever 1" from our strategic memo: fusing text-derived query embeddings with image-derived embeddings (visual exemplars) at inference time. The backbone must remain completely frozen.
+Architecture & Interface Requirements
+ Language: Python 3.10+
+ Core Libraries: ⁠transformers⁠, ⁠torch⁠, ⁠Pillow⁠, ⁠matplotlib⁠
+ Model: Use ⁠google/owlv2-base-patch16-ensemble⁠.
+ Modular Setup: Create a clear, easily editable "Configuration Block" at the very top of the script. This block must define dummy variables for:
+ ⁠MAIN_IMAGE_PATH⁠ (the target image to run detection on)
+ ⁠TEXT_QUERIES⁠ (a list of text strings)
+ ⁠EXEMPLAR_PATHS⁠ (a dictionary mapping each text query to a list of file paths for ground-truth exemplar image crops)
+ ⁠FUSION_ALPHA⁠ (a float between 0.0 and 1.0 to weight the fusion)
+ Note: Use placeholders or fetch a sample COCO image for the initial run, but ensure I can easily swap these out with local file paths later.
+Implementation Steps
+1. Base Extraction (Text & Visual)
+ Load the OWLv2 model and processor. Ensure inference is run in ⁠torch.no_grad()⁠ to guarantee the model remains frozen.
+ Text Embeddings: Process the ⁠TEXT_QUERIES⁠ to extract the baseline text query embeddings.
+ Visual Embeddings: Process the images in ⁠EXEMPLAR_PATHS⁠ using the image-guided path to extract visual embeddings. Ensure you handle NMS correctly (image-guided path defaults to ⁠nms_threshold=0.3⁠). If multiple crops exist for a single class, average their embeddings into a single representation.
+2. Implement Fusion Strategies
+Write modular functions for the two fusion candidates:
+ Strategy A (Embedding-level): Calculate a convex combination of the text embedding and the averaged visual exemplar embedding using the ⁠FUSION_ALPHA⁠ weight. Compute the final bounding box logits using this fused embedding.
+ Strategy B (Score-level): Perform late fusion. Calculate the detection logits for the text embeddings and the visual embeddings separately, then combine the logit streams using a configurable max or mean operation.
+3. Output & Evaluation
+ Implement a visualization function using ⁠matplotlib⁠ to draw the bounding boxes on the main image.
+ The script should generate a side-by-side visual plot or clear console output comparing three states:
+1. Text-only baseline
+2. Strategy A results
+3. Strategy B results
+ This output must allow me to easily measure the "fusion oracle" ceiling (i.e., whether the ground-truth exemplars improve upon the text-only baseline).
+Strict Constraints
+ Do not introduce any training loops or parameter updates.
+ Do not hardcode image paths deep within the logic; everything must be driven by the top-level Configuration Block.
